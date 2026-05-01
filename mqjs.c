@@ -357,7 +357,8 @@ static int eval_file(JSContext *ctx, const char *filename,
 }
 
 static void compile_file(const char *filename, const char *outfilename,
-                         size_t mem_size, int dump_memory, int parse_flags, BOOL force_32bit)
+                         size_t mem_size, int dump_memory, int parse_flags,
+                         BOOL force_32bit, uintptr_t relocate_addr)
 {
     uint8_t *mem_buf;
     JSContext *ctx;
@@ -410,7 +411,8 @@ static void compile_file(const char *filename, const char *outfilename,
         /* Relocate to zero to have a deterministic
            output. JS_DumpMemory() cannot work once the heap is relocated,
            so we relocate after it. */
-        JS_RelocateBytecode2(ctx, &hdr_buf.hdr, (uint8_t *)data_buf, data_len, 0, FALSE);
+        JS_RelocateBytecode2(ctx, &hdr_buf.hdr, (uint8_t *)data_buf, data_len,
+                             relocate_addr ? relocate_addr + hdr_len : 0, FALSE);
         hdr_len = sizeof(JSBytecodeHeader);
     }
     f = fopen(outfilename, "wb");
@@ -596,6 +598,7 @@ int main(int argc, const char **argv)
     int i, parse_flags;
     BOOL force_32bit, allow_bytecode;
     
+    uintptr_t relocate_addr = 0;
     mem_size = 16 << 20;
     dump_memory = 0;
     parse_flags = 0;
@@ -626,6 +629,18 @@ int main(int argc, const char **argv)
             if (opt == 'h' || opt == '?' || !strcmp(longopt, "help")) {
                 help();
                 continue;
+            }
+            if (opt == 'r') {
+                if (*arg) {
+                    relocate_addr = strtoul(arg, NULL, 0);
+                    break;
+                }
+                if (optind < argc) {
+                    relocate_addr = strtoul(argv[optind++], NULL, 0);
+                    break;
+                }
+                fprintf(stderr, "no address for -r\n");
+                exit(2);
             }
             if (opt == 'e' || !strcmp(longopt, "eval")) {
                 if (*arg) {
@@ -724,7 +739,7 @@ int main(int argc, const char **argv)
             exit(1);
         }
         compile_file(argv[optind], out_filename, mem_size, dump_memory,
-                     parse_flags, force_32bit);
+                    parse_flags, force_32bit, relocate_addr);
     } else {
         mem_buf = malloc(mem_size);
         ctx = JS_NewContext(mem_buf, mem_size, &js_stdlib);
