@@ -11,9 +11,17 @@ Also the default bytecode path requires relocation on the target platform itself
 Thus there are two methods to be used here:
 #### JS_SyncGlobalAtoms
 This method (called after JS_LoadBytecode) will walk through the heap and point property keys towards the atom table, only those that it can find in the bytecodes atoms. It leaves everything else in place on the ROM. There's a caveat to this method in that it reconciles against the latest atom table, so if you were to load multiple scripts some functions might be missing from the runtime.
+```c
+JS_LoadBytecode(ctx, bytecode);
+JS_SyncGlobalAtoms(ctx);
+```
 
 #### JS_PromoteAllProps
 This method (called before JS_LoadBytecode) will pull all the properties from the ROM into memory. It's a workaround for multiple scripts, but it can be more expensive as you're pulling in everything regardless of whether or not its used. It's probably a safe bet for development builds if you're iterating on the JS often, but once you've got a stable build, pick a JS bundler of some kind and plug everything into a single script and run it from ROM; in my testing this is generally faster than multiple scripts anyways.
+```c
+JS_PromoteAllProps(ctx);
+JS_LoadBytecode(ctx, bytecode);
+```
 
 I've got an idea to use the target platform elf file, reading the atoms and patching it that way, but it's a WIP and this current implementation offers a pretty solid way to get the atoms synced up on these targets.
 
