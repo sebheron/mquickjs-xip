@@ -3690,6 +3690,93 @@ void JS_SetRandomSeed(JSContext *ctx, uint64_t seed)
     ctx->random_state = seed;
 }
 
+void JS_SyncGlobalAtoms(JSContext *ctx)
+{
+    const JSValueArray *bc_atoms;
+    uint8_t *ptr;
+    int size;
+
+    /* Needs both stdlib and bytecode loaded first. Otherwise there's nothing to reconcile here. */
+    if (ctx->n_rom_atom_tables < 2)
+        return;
+
+    bc_atoms = ctx->rom_atom_tables[ctx->n_rom_atom_tables - 1];
+
+    ptr = ctx->heap_base;
+    while (ptr < ctx->heap_free) {
+        size = get_mblock_size(ptr);
+        /* Only check objects since they are the only ones that can have atom keys. */
+        if (js_get_mtag(ptr) == JS_MTAG_OBJECT) {
+            JSObject *p = (JSObject *)ptr;
+            JSValueArray *arr = JS_VALUE_TO_PTR(p->props);
+            int prop_count = JS_VALUE_GET_INT(arr->arr[0]);
+            int hash_mask = JS_VALUE_GET_INT(arr->arr[1]);
+            int j, k;
+            BOOL needs_rekey = FALSE;
+
+            /* First check if any key needs rekeying */
+            for (j = 0, k = 0; k < prop_count; j++) {
+                JSProperty *pr = (JSProperty *)&arr->arr[2 + hash_mask + 1 + 3 * j];
+                if (pr->key != JS_UNINITIALIZED) {
+                    int idx;
+                    JSValue match = find_atom(ctx, &idx, bc_atoms,
+                                              bc_atoms->size, pr->key);
+                    if (!JS_IsNull(match) && match != pr->key) {
+                        needs_rekey = TRUE;
+                        break;
+                    }
+                    k++;
+                }
+            }
+
+            /* Shove the properties into RAM and rehash */
+            if (needs_rekey) {
+                if (JS_IS_ROM_PTR(ctx, arr)) {
+                    js_update_props(ctx, JS_VALUE_FROM_PTR(p));
+                    /* js_update_props may GC; re-fetch all cached state */
+                    p = (JSObject *)ptr;
+                    arr = JS_VALUE_TO_PTR(p->props);
+                    prop_count = JS_VALUE_GET_INT(arr->arr[0]);
+                    hash_mask = JS_VALUE_GET_INT(arr->arr[1]);
+                }
+                for (j = 0, k = 0; k < prop_count; j++) {
+                    /* Rewrite the key, rehash happens outside this loop. */
+                    JSProperty *pr = (JSProperty *)&arr->arr[2 + hash_mask + 1 + 3 * j];
+                    if (pr->key != JS_UNINITIALIZED) {
+                        int idx;
+                        JSValue match = find_atom(ctx, &idx, bc_atoms,
+                                                  bc_atoms->size, pr->key);
+                        /* Safe to leave as not referenced in the bytecode. */
+                        if (!JS_IsNull(match)) {
+                            pr->key = match;
+                        }
+                        k++;
+                    }
+                }
+                js_rehash_props(ctx, p, FALSE);
+            }
+        }
+        ptr += size;
+    }
+}
+
+/* Optionally promote everything, costs more - probably not worth it unless you're doing HMR.*/
+void JS_PromoteAllProps(JSContext *ctx)
+{
+    uint8_t *ptr = ctx->heap_base;
+    while (ptr < ctx->heap_free) {
+        int size = get_mblock_size(ptr);
+        if (js_get_mtag(ptr) == JS_MTAG_OBJECT) {
+            JSObject *p = (JSObject *)ptr;
+            JSValueArray *arr = JS_VALUE_TO_PTR(p->props);
+            if (JS_IS_ROM_PTR(ctx, arr)) {
+                js_update_props(ctx, JS_VALUE_FROM_PTR(p));
+            }
+        }
+        ptr += size;
+    }
+}
+
 JSValue JS_GetGlobalObject(JSContext *ctx)
 {
     return ctx->global_obj;

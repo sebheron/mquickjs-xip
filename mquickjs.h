@@ -266,6 +266,8 @@ void JS_FreeContext(JSContext *ctx);
 void JS_SetContextOpaque(JSContext *ctx, void *opaque);
 void JS_SetInterruptHandler(JSContext *ctx, JSInterruptHandler *interrupt_handler);
 void JS_SetRandomSeed(JSContext *ctx, uint64_t seed);
+void JS_SyncGlobalAtoms(JSContext *ctx);
+void JS_PromoteAllProps(JSContext *ctx);
 JSValue JS_GetGlobalObject(JSContext *ctx);
 JSValue JS_Throw(JSContext *ctx, JSValue obj);
 JSValue __js_printf_like(3, 4) JS_ThrowError(JSContext *ctx, JSObjectClassEnum error_num,
