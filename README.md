@@ -17,6 +17,8 @@ This method (called before JS_LoadBytecode) will pull all the properties from th
 
 I've got an idea to use the target platform elf file, reading the atoms and patching it that way, but it's a WIP and this current implementation offers a pretty solid way to get the atoms synced up on these targets.
 
+The last thing here is a new parameter for mqjs, -r, which will relocate the bytecode to the specified address. The bytecode has internal pointers that need to know where it'll actually live, and without this the assumption is it's sat at offset 0. Pass it the final address the bytecode will end up at and you won't have to relocate at all during runtime.
+
 ## Introduction
 
 MicroQuickJS (aka. MQuickJS) is a JavaScript engine targeted at
